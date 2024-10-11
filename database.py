@@ -1,5 +1,3 @@
-# database.py
-
 import motor.motor_asyncio
 from pymongo import ASCENDING, DESCENDING
 
@@ -12,5 +10,3 @@ database = client.fastapi_db
 items_collection = database.get_collection("items_collection")
 clockin_collection = database.get_collection("clockin_collection")
 
-# Create indexes if necessary (e.g., for efficient querying)
-# Example: items_collection.create_index([("email", ASCENDING)])
