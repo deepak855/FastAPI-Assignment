@@ -21,6 +21,7 @@ class ItemUpdate(BaseModel):
     expiry_date: Optional[date] = Field(None, example="2025-01-01")
 
 class Item(ItemBase):
+
     id: str = Field(..., alias="_id")
     insert_date: datetime = Field(default_factory=datetime.utcnow)
 

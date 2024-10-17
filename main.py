@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from typing import List, Optional
 from bson import ObjectId
 from datetime import datetime, date
-from pydantic import EmailStr  # Ensure this import is present
+from pydantic import BaseModel, EmailStr
 
 from models import (
     Item,
@@ -25,11 +25,10 @@ app = FastAPI(
 # -------------------- Helper Functions --------------------
 
 def item_helper(item) -> dict:
-    """
-    Converts a MongoDB item document to a dictionary compatible with the Item Pydantic model.
-    """
+    """Convert a MongoDB item document to a dict compatible with the Item Pydantic model."""
+    print("item_helper :",item)
     return {
-        "id": str(item["_id"]),
+        "id": item["_id"],
         "name": item["name"],
         "email": item["email"],
         "item_name": item["item_name"],
@@ -39,9 +38,7 @@ def item_helper(item) -> dict:
     }
 
 def clockin_helper(record) -> dict:
-    """
-    Converts a MongoDB clock-in record document to a dictionary compatible with the ClockInRecord Pydantic model.
-    """
+    """Convert a MongoDB clock-in record document to a dict compatible with the ClockInRecord Pydantic model."""
     return {
         "id": str(record["_id"]),
         "email": record["email"],
@@ -53,23 +50,18 @@ def clockin_helper(record) -> dict:
 
 @app.post("/items", response_description="Create a new item", response_model=Item, status_code=status.HTTP_201_CREATED)
 async def create_item(item: ItemCreate):
-    """
-    Creates a new item in the database.
-    """
-    item = jsonable_encoder(item)
-    item["insert_date"] = datetime.utcnow()
-    new_item = await items_collection.insert_one(item)
+    """Create a new item in the database."""
+    item_data = jsonable_encoder(item)
+    item_data["insert_date"] = datetime.utcnow()
+    new_item = await items_collection.insert_one(item_data)
     created_item = await items_collection.find_one({"_id": new_item.inserted_id})
     if created_item:
-        return Item(**created_item)  # Pydantic validator handles ObjectId conversion
+        return Item(**item_helper(created_item))  # Pydantic validator handles ObjectId conversion
     raise HTTPException(status_code=500, detail="Item creation failed")
-
 
 @app.get("/items/{id}", response_description="Get a single item by ID", response_model=Item)
 async def get_item(id: str):
-    """
-    Retrieves an item by its ID.
-    """
+    """Retrieve an item by its ID."""
     if not ObjectId.is_valid(id):
         raise HTTPException(status_code=400, detail="Invalid ID format")
     item = await items_collection.find_one({"_id": ObjectId(id)})
@@ -84,9 +76,7 @@ async def filter_items(
     insert_date: Optional[datetime] = Query(None, description="Filter items inserted after this datetime (ISO format)"),
     quantity: Optional[int] = Query(None, ge=0, description="Filter items with quantity >= this number"),
 ):
-    """
-    Filters items based on query parameters.
-    """
+    """Filters items based on query parameters."""
     query = {}
     if email:
         query["email"] = email
@@ -104,9 +94,7 @@ async def filter_items(
 
 @app.get("/items/aggregate", response_description="Aggregate items count by email")
 async def aggregate_items():
-    """
-    Aggregates the count of items grouped by email.
-    """
+    """Aggregates the count of items grouped by email."""
     pipeline = [
         {"$group": {"_id": "$email", "count": {"$sum": 1}}},
         {"$project": {"email": "$_id", "count": 1, "_id": 0}},
@@ -118,9 +106,7 @@ async def aggregate_items():
 
 @app.delete("/items/{id}", response_description="Delete an item", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_item(id: str):
-    """
-    Deletes an item by its ID.
-    """
+    """Deletes an item by its ID."""
     if not ObjectId.is_valid(id):
         raise HTTPException(status_code=400, detail="Invalid ID format")
     result = await items_collection.delete_one({"_id": ObjectId(id)})
@@ -130,9 +116,7 @@ async def delete_item(id: str):
 
 @app.put("/items/{id}", response_description="Update an item", response_model=Item)
 async def update_item(id: str, item: ItemUpdate):
-    """
-    Updates an item's details by ID (excluding the insert_date).
-    """
+    """Updates an item's details by ID (excluding the insert_date)."""
     if not ObjectId.is_valid(id):
         raise HTTPException(status_code=400, detail="Invalid ID format")
     item_data = {k: v for k, v in item.dict().items() if v is not None}
@@ -142,23 +126,23 @@ async def update_item(id: str, item: ItemUpdate):
         update_result = await items_collection.update_one({"_id": ObjectId(id)}, {"$set": item_data})
         if update_result.modified_count == 1:
             updated_item = await items_collection.find_one({"_id": ObjectId(id)})
+            print("updated_item :",updated_item)
             if updated_item:
                 return Item(**item_helper(updated_item))  # Use helper function here
-    existing_item = await items_collection.find_one({"_id": ObjectId(id)})
-    if existing_item:
-        return Item(**item_helper(existing_item))  # Use helper function here
+    # print("returned")
+    # existing_item = await items_collection.find_one({"_id": ObjectId(id)})
+    # if existing_item:
+    #     return Item(**item_helper(existing_item))  # Use helper function here
     raise HTTPException(status_code=404, detail="Item not found")
 
 # -------------------- Clock-In Records API --------------------
 
 @app.post("/clock-in", response_description="Create a new clock-in record", response_model=ClockInRecord, status_code=status.HTTP_201_CREATED)
 async def create_clockin(record: ClockInCreate):
-    """
-    Creates a new clock-in record in the database.
-    """
-    record = jsonable_encoder(record)
-    record["insert_datetime"] = datetime.utcnow()
-    new_record = await clockin_collection.insert_one(record)
+    """Creates a new clock-in record in the database."""
+    record_data = jsonable_encoder(record)
+    record_data["insert_datetime"] = datetime.utcnow()
+    new_record = await clockin_collection.insert_one(record_data)
     created_record = await clockin_collection.find_one({"_id": new_record.inserted_id})
     if created_record:
         return ClockInRecord(**clockin_helper(created_record))  # Use helper function here
@@ -166,9 +150,7 @@ async def create_clockin(record: ClockInCreate):
 
 @app.get("/clock-in/{id}", response_description="Get a clock-in record by ID", response_model=ClockInRecord)
 async def get_clockin(id: str):
-    """
-    Retrieves a clock-in record by its ID.
-    """
+    """Retrieves a clock-in record by its ID."""
     if not ObjectId.is_valid(id):
         raise HTTPException(status_code=400, detail="Invalid ID format")
     record = await clockin_collection.find_one({"_id": ObjectId(id)})
@@ -182,9 +164,7 @@ async def filter_clockins(
     location: Optional[str] = Query(None, description="Filter by exact location"),
     insert_datetime: Optional[datetime] = Query(None, description="Filter clock-ins after this datetime (ISO format)"),
 ):
-    """
-    Filters clock-in records based on query parameters.
-    """
+    """Filters clock-in records based on query parameters."""
     query = {}
     if email:
         query["email"] = email
@@ -198,41 +178,3 @@ async def filter_clockins(
         records.append(ClockInRecord(**clockin_helper(record)))  # Use helper function here
     return records
 
-@app.delete("/clock-in/{id}", response_description="Delete a clock-in record", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_clockin(id: str):
-    """
-    Deletes a clock-in record by its ID.
-    """
-    if not ObjectId.is_valid(id):
-        raise HTTPException(status_code=400, detail="Invalid ID format")
-    result = await clockin_collection.delete_one({"_id": ObjectId(id)})
-    if result.deleted_count == 1:
-        return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content={})
-    raise HTTPException(status_code=404, detail="Clock-In record not found")
-
-@app.put("/clock-in/{id}", response_description="Update a clock-in record", response_model=ClockInRecord)
-async def update_clockin(id: str, record: ClockInUpdate):
-    """
-    Updates a clock-in record by ID (excluding insert_datetime).
-    """
-    if not ObjectId.is_valid(id):
-        raise HTTPException(status_code=400, detail="Invalid ID format")
-    record_data = {k: v for k, v in record.dict().items() if v is not None}
-    if "insert_datetime" in record_data:
-        del record_data["insert_datetime"]  # Exclude insert_datetime from updates
-    if record_data:
-        update_result = await clockin_collection.update_one({"_id": ObjectId(id)}, {"$set": record_data})
-        if update_result.modified_count == 1:
-            updated_record = await clockin_collection.find_one({"_id": ObjectId(id)})
-            if updated_record:
-                return ClockInRecord(**clockin_helper(updated_record))  # Use helper function here
-    existing_record = await clockin_collection.find_one({"_id": ObjectId(id)})
-    if existing_record:
-        return ClockInRecord(**clockin_helper(existing_record))  # Use helper function here
-    raise HTTPException(status_code=404, detail="Clock-In record not found")
-
-# -------------------- Root Endpoint --------------------
-
-@app.get("/", response_description="Welcome message")
-async def root():
-    return {"message": "Welcome to the FastAPI CRUD Application!"}
